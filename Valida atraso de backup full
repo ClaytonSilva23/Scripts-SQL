@@ -1,0 +1,49 @@
+/* VERIFICA SE EXISTE A TABELA TEMPORÁRIA ##Verifica_BKP_FULL E CASO EXISTA FAZ O DROP */
+IF EXISTS (SELECT * FROM TEMPDB.dbo.sysobjects WHERE NAME IN ('##Verifica_BKP_FULL')) 
+BEGIN
+DROP TABLE ##Verifica_BKP_FULL
+END
+
+/* CRIAÇÃO DE TABELA TEMPORÁRIA COM DADOS DAS BASES QUE NÃO POSSUEM BACKUP FULL */
+SELECT master.dbo.sysdatabases.NAME AS database_name INTO ##Verifica_BKP_FULL
+FROM master.dbo.sysdatabases
+LEFT JOIN msdb.dbo.backupset ON master.dbo.sysdatabases.name = msdb.dbo.backupset.database_name
+WHERE msdb.dbo.backupset.database_name IS NULL
+	AND master.dbo.sysdatabases.name <> 'tempdb'
+
+/* T-SHOOTING DESCOMENTAR AS DUAS LINHAS ABAIXO PARA CONTAGEM DE LINHAS E SELECT NA TABELA TEMPORÁRIA */
+--SELECT COUNT(*) FROM ##Verifica_BKP_FULL 
+--SELECT * FROM ##Verifica_BKP_FULL
+
+/* LAÇO DE REPETIÇÃO - ENQUANTO HOUVER DATABASE SEM BACKUP FULL ELE VAI EXECUTAR O SCRIPT ABAIXO */
+WHILE (SELECT COUNT(*) FROM ##Verifica_BKP_FULL) > 0
+BEGIN
+
+/* DECLARAÇÃO DE VARIÁVEIS - COLETA O NOME UMA DATABASE POR VEZ */
+declare @DB_NAME varchar(max)='';
+
+/* FAZ O TOP 1 DA DATABASE NA TABELA TEMPORÁRIA */
+SELECT TOP 1 @DB_NAME=database_name FROM ##Verifica_BKP_FULL
+
+/* EM CASO DE T-SHOOTING DESCOMENTE A LINHA ABAIXO PARA EXIBIR O VALOR ATUAL DA VARIÁVEL @DB_NAME */
+--SELECT (@DB_NAME)
+
+/* INSERIR O SCRIPT (OLA HALLEGREN) DE BACKUP FULL DO AMBIENTE - OBS: MANTER A LINHA 33 CONFORME O MODELO */
+EXECUTE DBAOnline.dbo.DatabaseBackup
+@Databases = @DB_NAME,
+@Directory = 'C:\SQL2\Backup',
+@BackupType = 'FULL',
+@Verify = 'Y',
+@Compress = 'Y',
+@DirectoryStructure = '{DirectorySeparator}{DatabaseName}{DirectorySeparator}_{Partial}_{CopyOnly}',
+@FileName = '{DatabaseName}_{Partial}_{CopyOnly}_{Day}_{Month}_{Year}_{Hour}{Minute}{Second}_FULL.{FileExtension}',
+@AvailabilityGroupDirectoryStructure = '{DatabaseName}{DirectorySeparator}{BackupType}_{Partial}_{CopyOnly}'
+
+
+/* REALIZA O DELETE DA DATABASE QUE O BACKUP FULL FOI RECEM EXECUTADO NA TABELA TEMPORÁRIA */
+DELETE FROM ##Verifica_BKP_FULL WHERE database_name = @DB_NAME
+
+END
+
+/* DROPA A TABELA TEMPORÁRIA */
+DROP TABLE ##Verifica_BKP_FULL
